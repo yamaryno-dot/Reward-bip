@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Withdraw Signature (EIP-712)</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font-family:system-ui;padding:14px;max-width:800px;margin:auto}
+    input, button {padding:8px;margin:6px 0;width:100%;box-sizing:border-box}
+    button{cursor:pointer}
+    pre{background:#f6f6f6;padding:10px;border-radius:6px;white-space:pre-wrap}
+    label{font-weight:600;font-size:14px}
+  </style>
+</head>
+<body>
+  <h2>Withdraw Signature (EIP‑712)</h2>
+  <p>برای تست: از شبکه <strong>Sepolia (chainId 11155111)</strong> استفاده کن. مقادیر را تنظیم کن، سپس Connect و Sign بزن.</p>
+
+  <label>Contract (verifyingContract):</label>
+  <input id="contract" value="0xCONTRACT_ADDRESS_HERE" placeholder="مثال: 0x..." />
+
+  <label>Chain ID (مثال: 11155111 = Sepolia):</label>
+  <input id="chainId" value="11155111" />
+
+  <label>Token (0x0 برای ETH):</label>
+  <input id="token" value="0x0000000000000000000000000000000000000000" />
+
+  <label>Recipient (to):</label>
+  <input id="to" value="0xRECIPIENT_ADDRESS_HERE" />
+
+  <label>Amount (عددی، مثلاً 0.01 برای ETH):</label>
+  <input id="amount" value="0.01" />
+
+  <label>Decimals (برای ETH=18):</label>
+  <input id="decimals" value="18" />
+
+  <label>Nonce (مثلاً 1):</label>
+  <input id="nonce" value="1" />
+
+  <label>Deadline (epoch seconds — اگر خالی بذاری ۱ ساعت ست می‌شود):</label>
+  <input id="deadline" placeholder="اختیاری — مثلا 1700000000" />
+
+  <div style="display:flex;gap:8px;">
+    <button id="connectBtn" style="flex:1">Connect Wallet</button>
+    <button id="signBtn" style="flex:1">Create & Sign (EIP‑712)</button>
+  </div>
+
+  <h3>Output</h3>
+  <pre id="out">---</pre>
+
+<script>
+const outEl = id => document.getElementById(id);
+const write = txt => outEl('out').innerText += txt + "\\n";
+const clearOut = () => outEl('out').innerText = '';
+
+async function connectWallet() {
+  if (!window.ethereum) { alert('MetaMask یا کیف وب‌3 نصب نشده. از MetaMask Mobile یا مرورگر دارای web3 استفاده کن.'); throw new Error('No wallet'); }
+  const provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+  await provider.send('eth_requestAccounts', []);
+  const signer = provider.getSigner();
+  const addr = await signer.getAddress();
+  write('Connected: ' + addr);
+  return { provider, signer, addr };
+}
+
+document.getElementById('connectBtn').onclick = async () => {
+  clearOut(); 
+  try { await connectWallet(); } catch(e){ write('Connect cancelled or failed'); }
+};
+
+document.getElementById('signBtn').onclick = async () => {
+  clearOut();
+  try {
+    const c = document.getElementById('contract').value.trim();
+    const chainId = parseInt(document.getElementById('chainId').value.trim() || '11155111');
+    const token = document.getElementById('token').value.trim();
+    const to = document.getElementById('to').value.trim();
+    const amountInput = document.getElementById('amount').value.trim();
+    const decimals = parseInt(document.getElementById('decimals').value.trim() || '18');
+    const nonce = parseInt(document.getElementById('nonce').value.trim() || '1');
+    let deadline = document.getElementById('deadline').value.trim();
+    if (!deadline) { deadline = Math.floor(Date.now()/1000) + 3600; } else { deadline = parseInt(deadline); }
+
+    write('Preparing to sign...');
+    write('contract: ' + c);
+    write('chainId: ' + chainId);
+    write('token: ' + token);
+    write('to: ' + to);
+    write('amount (input): ' + amountInput + ' decimals:' + decimals);
+    write('nonce: ' + nonce);
+    write('deadline: ' + deadline + ' (' + new Date(deadline*1000).toISOString() + ')');
+
+    const { provider, signer, addr } = await connectWallet();
+
+    // convert amount to integer string
+    const bnAmount = ethers.utils.parseUnits(amountInput || '0', decimals).toString();
+
+    const domain = {
+      name: "WithdrawWithSig",
+      version: "1",
+      chainId: chainId,
+      verifyingContract: c
+    };
+
+    const types = {
+      Withdraw: [
+        { name: "token", type: "address" },
+        { name: "to", type: "address" },
+        { name: "amount", type: "uint256" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" }
+      ]
+    };
+
+    const value = {
+      token: token,
+      to: to,
+      amount: bnAmount,
+      nonce: nonce,
+      deadline: deadline
+    };
+
+    write('\\nRequesting EIP-712 signature (wallet prompt will appear)...');
+    const signature = await signer._signTypedData(domain, types, value);
+    write('Signature: ' + signature);
+    const split = ethers.utils.splitSignature(signature);
+    write('v: ' + split.v);
+    write('r: ' + split.r);
+    write('s: ' + split.s);
+
+    write('\\nJSON to store/send to executor:');
+    write(JSON.stringify({domain, types, value, signature}, null, 2));
+    write('\\n--- نگهداری امن امضا ضروری است ---');
+  } catch (e) {
+    write('Error: ' + (e && e.message ? e.message : e));
+  }
+};
+</script>
+</body>
+</html>
